@@ -1,0 +1,70 @@
+<# 
+.SYNOPSIS
+    The script checks if the user is syncing to Office 365. 
+
+.DESCRIPTION 
+    The script scans the Userprinciplaname in Sourcefile and checks it in cloud if they are syncing or not and generates
+    the report accordingly
+ 
+.NOTES 
+    The script need to run on any Windows 10 machine with MSonline Powershell module installed
+
+.COMPONENT 
+     Windows Powershell with  MSonline PowerShell modules needs to be installed.
+
+.LINK 
+    Useful Link to ressources or others.
+    https://dev.azure.com/USCD-IT/IT_InfaEng/_git/IT_InfaEng?version=GBMain&path=/Post_Migration_Script/CheckUserSync
+ 
+.Parameter ParameterName 
+     There are 2 parameters 
+     1. "SourceFile" which is a csv file havin "Userprincipalname" as Header
+     2.The "Report" is a Csv file generated which contains User Sync information
+#>
+
+
+
+
+
+
+
+
+[CmdletBinding()]
+param(
+
+[Parameter(Mandatory=$True)][string]$Sourcefile,
+[Parameter(Mandatory=$True)][string]$Report
+)
+
+###Scripts starts here
+
+$z=get-date
+$file=[string]$z.day+ "_" +$z.month  +"_" +$z.year +"_" +$z.hour+$z.minute+$z.second
+$Logfile=$file +".txt"
+
+$users=import-csv $Sourcefile
+
+foreach($user in $users)
+{
+$Msonline=$user |%{get-msoluser -userprincipalname $_.userprincipalname}
+if($MSonline -eq $null)
+{
+$obj=new-object psobject
+$obj |add-member -NotePropertyname UserStatus -NotePropertyValue "NOT SYNCED"
+$obj |add-member -NotePropertyname Displayname -NotePropertyValue "NA"
+$obj |add-member -NotePropertyname Userprincipalname -NotePropertyValue "NA"
+$obj |add-member -NotePropertyname WhenCreated -NotePropertyValue "NA"
+}
+else
+{
+
+$obj=new-object psobject
+$obj |add-member -NotePropertyname UserStatus -NotePropertyValue "SYNCED"
+$obj |add-member -NotePropertyname Displayname -NotePropertyValue $Msonline.displayname
+$obj |add-member -NotePropertyname Userprincipalname -NotePropertyValue $Msonline.Userprincipalname
+$obj |add-member -NotePropertyname WhenCreated -NotePropertyValue $MSonline.WhenCreated
+}
+$obj |export-csv $Report -nti -append
+}
+
+Write-host "The Logs file containing details is $($Logfile)"
