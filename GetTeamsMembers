@@ -1,0 +1,77 @@
+<# 
+.SYNOPSIS
+    The script  can be run in any M365 Tenant to get the list of Team and its Members
+
+.DESCRIPTION 
+    The script pulls the list of teams in the team. The script can be used to memmers of all Teams Tenant or Specified Teams.
+ 
+.NOTES 
+    The script need to run on Windows PowerShell of any  machine with MicrosoftTeams PowerShell installed
+    
+
+.COMPONENT 
+     MS Teams PowerShell  modules needs to be installed.
+
+.LINK 
+    The script can be downloaded from Script folder or URL .
+ 
+.Parameter ParameterName 
+    There are three Parameters
+    1.Inputfile  : It is an Optional Parameter  which contains GroupId as header. This file should have GroupIds of teams whose
+    members are to be determined.
+    2.GuestMembers: It is a csv file which contains the Output of the GBPre_Migration_scripts 
+ #>
+[CmdletBinding()]
+param(
+[Parameter(Mandatory=$False)][string]$Inputfile,
+[Parameter(Mandatory=$True)][string]$GuestMembers,
+[Parameter(Mandatory=$True)][string]$Report
+)
+
+# This script has to be run only once to get the Teams members
+ #### script starts here
+ $z=get-date
+ $file=[string]$z.day+ "_" +$z.month  +"_" +$z.year +"_" +$z.hour+$z.minute+$z.second
+ $Logfile=$file +".txt"
+
+connect-MicrosoftTeams
+if(!($Inputfile -eq "csv"))
+{
+$Teams=get-Team
+}
+else
+{
+  $Team=import-csv $Inputfile
+}
+
+foreach($team in $Teams)
+{
+  $members=$team |%{Get-TeamUser -GroupId $_.GroupId}
+   foreach($member in $members)
+     {
+      $y="Getting the team members for $($Team.Name)"
+      $y>>$Logfile
+      write-host $y
+      $obj=new-object psobject
+       
+      $obj |add-member -NotePropertyname GroupDisplayname -NotePropertyValue $team.Displayname
+      $obj |add-member -NotePropertyname GroupMailNickName -NotePropertyValue $team.MailNickName                     
+      $obj |add-member -NotePropertyname MemberName -NotePropertyValue $Member.Name
+      $obj |add-member -NotePropertyname MemberIdentity -NotePropertyValue $Member.User
+      $obj |add-member -NotePropertyname MemberType -NotePropertyValue $Member.Role
+      $obj |add-member -NotePropertyname GroupId -NotePropertyValue $Team.GroupId
+
+      $obj |export-csv -nti $Report -Append
+     }
+}
+
+##Getting the GuestMembers list
+$Guest=import-csv $Report |?{$_.MemberIdentity -match "#EXT"}
+$Guest |export-csv $GuestMembers -nti
+
+Write-host "The Logs file containing details is $($Logfile)"
+
+
+
+
+
