@@ -1,0 +1,41 @@
+[CmdletBinding()]
+param(
+[Parameter(Mandatory=$True)][string]$Sourcefile,
+[Parameter(Mandatory=$True)][string]$Report
+)
+
+#### Scripts starts here 
+$z=get-date
+$file=[string]$z.day+ "_" +$z.month  +"_" +$z.year +"_" +$z.hour+$z.minute+$z.second
+$Logfile=$file +".txt"
+
+
+
+$TeamMember=import-csv $sourceFile.csv |?{$_.MemberType -match "Guest"}
+connect-MicrosoftTeams
+
+foreach($team in $Teammember)
+{
+ $GpId=($team|%{get-team $_.GroupDisplayname}).Objectid
+ $Member=$team.MemberIdentity.split("@")[0] +"@ xxx  .onmicrosoft.com"
+
+ Add-TeamUser -GroupId $GpId -User $Member -Role "Guest"
+ 
+ $Gp=$Team |%{get-teamUser -GroupId $GpId} |?{$_.member -match $Member}
+ if($Gp -ne $null)
+   {
+    $y="The Guest Member $($Member) has been added successfully to the group $($team.Identity)"
+    $y >>Logfile.txt
+    Write-host $y
+   } 
+   else
+   {
+   $y="The Guest Member $($Member) wasnt added to the group $($team.Identity)"
+    $y >>Logfile.txt
+    Write-host $y
+   } 
+
+
+}
+
+Write-host "The Logs file containing details is $($Logfile)"
