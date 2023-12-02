@@ -1,0 +1,106 @@
+<# 
+.SYNOPSIS
+    The script is a Post Migration task which can be run in any M365 Tenant to covert the  OneDrive into ReadOnly state
+ 
+.DESCRIPTION 
+    The script pulls the list of users from the csv and converts the Onedrive in ReadonLy state.
+.NOTES 
+    The script need to run on Windows PowerShell of any  machine with SharePointOnline PowerShell module installed.
+    
+ 
+.COMPONENT 
+     SharePoint Online PowerShell  module needs to be installed.
+ 
+.LINK 
+     The script can be downloaded from Script folder or URL
+     
+
+.Parameter ParameterName 
+    There is two  Parameters.
+    1.Inputfile  : It is a necessary Parameter  which contains  "userprincipalname" of the as the header. This file has M365 UPN  of users whose
+    OneDrive has to be converted to "Read Only state".
+    2. Report: It is a csv file like "c:\users\Microsoft\Report.csv" which is generated at the end of script containing the OneDrive state of the user" 
+   
+#>
+
+[CmdletBinding()]
+param(
+[Parameter(Mandatory=$True)][string]$Inputfile,
+[Parameter(Mandatory=$True)][String]$Report
+
+)
+ 
+
+function personal
+{
+param([string]$Identity)
+$url1=($Identity).replace("@","_")
+$url2=$url1.replace(".","_")
+$Site=$OneDriveUrl +$url2
+return $site
+}
+
+function OneDriveSettings
+{
+param([string]$Site)
+ $y="Checking the Updated OneDrive Settings for User $($Identity)"
+ $y>>$Logfile
+ Write-host $y
+ $LockState=(get-SpoSite -Identity $Site).LockState
+     if($LockState -match "ReadOnly")
+          {
+             $ODSetting="ReadOnly"
+             $y="The Onedrive settings  for the User $($Identity) has been successfully Updated"
+             $y>>$Logfile
+             Write-host $y
+          }
+      else
+          {
+              $y="The Onedrive settings  for the User $($Identity) couldnt be updated. Please try again !!!"
+              $y>>$Logfile
+              Write-host $y
+              $ODSetting="Unlocked"
+          }
+
+
+return $ODSetting
+}
+############### script starts here #############
+$z=get-date
+$file=[string]$z.day+ "_" +$z.month  +"_" +$z.year +"_" +$z.hour+$z.minute+$z.second
+$Logfile=$file +".txt"
+
+
+######## Connecting SPO Service ########
+$Cred=connect-msolservice
+$sku=Get-MsolAccountSku 
+$dom=$sku[0].Accountskuid.split(":")[0]
+
+
+$Url="https://"+ $dom +"-admin.sharepoint.com"
+$OneDriveUrl="https://"+ $dom +"-my.sharepoint.com/personal/"
+Connect-SPOService  -Url $Url -ModernAuth $true -AuthenticationUrl https://login.microsoftonline.com/organizations -credential $Cred
+
+
+$users=import-csv $Inputfile
+foreach($user in $users)
+{
+ $global:Identity=$user.Userprincipalname
+     $y="Updating the  OneDrive Settings for User $($Identity) "
+     $y>>$Logfile
+     Write-host $y
+
+$Site=personal -Identity $Identity
+$PreMigState=Get-SpoSite -Identity $Site
+Set-SPOSite -Identity $Site -LockState "ReadOnly"
+$ODSetting=OneDriveSettings -Site $Site
+
+  $Obj=new-object psobject
+  $Obj|add-member -NotePropertyname Userprincipalname -NotePropertyValue $Identity
+  $Obj|add-member -NotePropertyname PreMigstate -NotePropertyValue $PreMigState.LockState
+  $Obj|add-member -NotePropertyname OneDriveURL -NotePropertyValue $Site
+  $Obj|add-member -NotePropertyname PostMigstate -NotePropertyValue $ODSetting
+  $Obj |export-csv $Report -nti -append
+}
+
+Write-host "The Logs file containing details is $($Logfile)" #
