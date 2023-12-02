@@ -1,0 +1,56 @@
+<# 
+.SYNOPSIS
+    The script  can be run in any M365 Tenant to get TeamsAppPermissionPolicy applied on Teams Users
+
+.DESCRIPTION 
+    The script pulls the Teamsusers and scan its TeamsAppPermissionPolicy .
+ 
+.NOTES 
+    The script need to run on Windows PowerShell of any  machine with MicrosoftTeams PowerShell installed
+    
+
+.COMPONENT 
+     MS Teams PowerShell  modules needs to be installed.
+
+.LINK 
+    The script can be downloaded from Script folder or URL .
+    https://dev.azure.com/USCD-IT/_git/IT_InfaEng?path=/Pre_Migration_Scripts/Pre_MigTeams&version=GBPre_Migration_scripts
+
+ 
+.Parameter ParameterName 
+    There are two Parameters
+    1.Inputfile  : It is a csv (Optional) which Contains Identity as header. The file contains  M365 userprincipalname of the users.
+    2.Report: It is a csv file which contains Report of the script.
+
+[CmdletBinding()]
+param(
+
+[Parameter(Mandatory=$True)][string]$SourceFile,
+[Parameter(Mandatory=$True)][string]$Report
+
+)
+
+#This script gives the the app permission assigned to the teams users
+# The Inputfile csv file has header Identity and the inout should be userprincipalname of the teams users 
+
+###########Script Start here ##############
+
+$z=get-date
+$file=[string]$z.day+ "_" +$z.month  +"_" +$z.year +"_" +$z.hour+$z.minute+$z.second
+$Logfile=$file +".txt"
+
+connect-MicrosoftTeams
+
+$users=import-csv $sourcefile
+foreach($user in $users)
+{
+
+$y="Scanning App Permission Policy for user $($user.Identity)"
+$y>>$Logfile
+
+Write-host "Scanning App Permission Policy for user $($user.Identity)"
+$csuser=$user |%{get-csonlineuser $_.Identity}
+$csuser |select userprincipalname,Country,TeamsAppPermissionPolicy |export-csv $Report-csv -nti
+}
+
+Write-host "The Logs file containing details is $($Logfile)"
