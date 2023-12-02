@@ -1,0 +1,158 @@
+<# 
+.SYNOPSIS
+    The script scans through AD,M365 and Exchange Online attributes
+    to create a PreMigration Output file 
+
+.DESCRIPTION 
+    The script scans the AD user on base of Samaccountname and the output is saved in a variable
+    Then userprincipalname of the same user taken from previous command is used to get user M365 information
+    and Exchange Online information. The data collected is then exported to a csv file which acts as input
+    file in following Steps.
+ 
+.NOTES 
+    The script need to run on AD environment or domain joined machine with AD module installed
+    Besides this Msonline and ExchangeOnline module needs to be installed
+
+.COMPONENT 
+     AD PowerShell module, Exchange Online Module and MSonline PowerShell modules needs to be installed.
+
+.LINK 
+    The script can be downloaded from Script folder or URL .
+ 
+.Parameter ParameterName 
+    There are three Parameters
+    1.Inputfile  : It is a csv file along with location like "c:\users\James\Desktop\Wave1.csv"
+    which should contain Samaccountname and LegalEntity as headers.
+    2. Region:It is a simple text which will be entered when executing the script. Its values are
+    
+    3.OutPutFile:It is a csv file which contains the Output of a script like "c:\users\James\Desktop\Wave1Output.csv" 
+#>
+
+[CmdletBinding()]
+param(
+
+[Parameter(Mandatory=$True)][string]$Inputfile,
+[Parameter(Mandatory=$False)][string]$Region,
+[Parameter(Mandatory=$False)][string]$Outputfile
+
+)
+
+
+function MBXAttributes
+{
+param([string]$Upn)
+$mailbox=get-mailbox $upn
+
+
+$obj=new-object psobject
+$obj |add-member -NotePropertyname CA12 -NotePropertyValue $mailbox.CustomAttribute12
+$obj |add-member -NotePropertyname CA13 -NotePropertyValue $mailbox.CustomAttribute13
+$obj |add-member -NotePropertyname PrimarySmtpAddress -NotePropertyValue $mailbox.PrimarySmtpAddress
+$obj |add-member -NotePropertyname ArchiveStatus -NotePropertyValue $mailbox.ArchiveStatus
+$obj |add-member -NotePropertyname ForwardingSmtpAddress -NotePropertyValue $mailbox.ForwardingSmtpAddress
+$obj |add-member -NotePropertyname MailboxType -NotePropertyValue $mailbox.Recipienttypedetails
+
+
+$size=Get-MailboxStatistics $upn
+$obj |add-member -NotePropertyname MailboxSize -NotePropertyValue $Size.TotalItemSize
+$obj |add-member -NotePropertyname MailboxCount -NotePropertyValue $Size.ItemCount
+
+
+$Re=Get-MailboxRegionalConfiguration $upn
+$obj |add-member -NotePropertyname Language -NotePropertyValue $Re.Language
+$obj |add-member -NotePropertyname TimeZone -NotePropertyValue $Re.TimeZone
+return $obj
+
+}
+
+function OnlineAttributes
+{
+param([string]$Upn)
+$MSuser=get-msoluser -userprincipalname $upn
+$obj=new-object psobject
+$obj |add-member -NotePropertyname UsageLocation -NotePropertyValue $MSuser.Usagelocation
+$obj |add-member -NotePropertyname PreferredLanguage -NotePropertyValue $MSuser.PreferredLanguage
+$lic=$MSuser |select -ExpandProperty licenses |select AccountSkuId
+ if(($lic -match "ENTERPRISEPACK|ENTERPRISEPREMIUM") -and ($lic.count -eq 1))
+  {
+      if($lic -match "ENTERPRISEPACK")
+       {
+               $Lics="E3"
+       } 
+      if($lic -match "ENTERPRISEPREMIUM")
+       {
+               $Lics="E5"
+       }   
+  }
+
+if(($lic -match "ENTERPRISEPACK|ENTERPRISEPREMIUM") -and ($lic.count -gt 1))
+       {
+      if($lic -match "ENTERPRISEPACK")
+       {
+               $Lics="E3"
+       } 
+      if($lic -match "ENTERPRISEPREMIUM")
+       {
+               $Lics="E5"
+       }
+       }  
+
+$obj |add-member -NotePropertyname Licenses -NotePropertyValue $Lics
+return $obj
+}
+
+
+
+
+
+#Scripts starts here
+
+$z=get-date
+$file=[string]$z.day+ "_" +$z.month  +"_" +$z.year +"_" +$z.hour+$z.minute+$z.second
+$Logfile=$file +".txt"
+
+import-module Activedirectory
+$users=import-csv $Inputfile
+connect-msolservice
+Connect-ExchangeOnline 
+
+foreach($user in $users)
+{
+$upn=$user.Userprincipalname
+$y="Pre-Migration Checks  for user $($upn)"
+$y>> $Logfile
+Write-host "Pre-Migration Checks  for user $($upn)"  -foregroundcolor Green
+$Resource=$upn |%{get-aduser -filter {userprincipalname -eq $_} -properties *}
+
+
+$obj=new-object psobject
+$obj |add-member -NotePropertyname Displayname -NotePropertyValue $Resource.Displayname
+$obj |add-member -NotePropertyname UPN -NotePropertyValue $Resource.Userprincipalname
+$obj |add-member -NotePropertyname AccountStatus -NotePropertyValue $Resource.Enabled 
+$obj |add-member -NotePropertyname Country -NotePropertyValue $Resource.Country
+$obj |add-member -NotePropertyname Comapany -NotePropertyValue $Resource.Company
+$obj |add-member -NotePropertyname DN -NotePropertyValue $Resource.DistinguishedName
+$obj |add-member -NotePropertyname SIDhistory -NotePropertyValue $Resource.SIDhistory
+
+$OAttributes=MBXAttributes($upn)
+$obj |add-member -NotePropertyname CA12 -NotePropertyValue $OAttributes.CA12
+$obj |add-member -NotePropertyname CA13 -NotePropertyValue $OAttributes.CA13
+$obj |add-member -NotePropertyname PrimarySmtpAddress -NotePropertyValue $OAttributes.PrimarySmtpAddress
+$obj |add-member -NotePropertyname MailboxSize -NotePropertyValue $OAttributes.MailboxSize
+$obj |add-member -NotePropertyname MailboxCount -NotePropertyValue $OAttributes.MailboxCount
+$obj |add-member -NotePropertyname MailboxType -NotePropertyValue $OAttributes.MailboxType
+$obj |add-member -NotePropertyname Language -NotePropertyValue $OAttributes.Language
+$obj |add-member -NotePropertyname TimeZone -NotePropertyValue $OAttributes.TimeZone
+$obj |add-member -NotePropertyname ArchiveStatus -NotePropertyValue $OAttributes.ArchiveStatus
+
+$MSattributes=OnlineAttributes($upn)
+$obj |add-member -NotePropertyname Usagelocation -NotePropertyValue $msattributes.Usagelocation
+$obj |add-member -NotePropertyname PreferredLanguage -NotePropertyValue $msattributes.PreferredLanguage
+$obj |add-member -NotePropertyname Licenses -NotePropertyValue $msattributes.Licenses
+
+$obj |export-csv ~\Desktop\$Outputfile -Append
+
+
+} 
+
+Write-host "The Logs file containing details is $($Logfile)"
