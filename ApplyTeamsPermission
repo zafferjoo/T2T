@@ -1,0 +1,64 @@
+[CmdletBinding()]
+param(
+
+[Parameter(Mandatory=$True)][string]$SourceFile,
+[Parameter(Mandatory=$True)][string]$Report
+
+)
+
+###########Script starts here #############
+$z=get-date
+$file=[string]$z.day+ "_" +$z.month  +"_" +$z.year +"_" +$z.hour+$z.minute+$z.second
+$Logfile=$file +".txt"
+
+connect-MicrosoftTeams
+
+$csusers=import-csv $SourceFile
+foreach($user in $users)
+{
+  $y="Assigning App Permission Policy $($user.TeamsAppPermissionPolicy) to the user $($user.Userprincipalname)"
+  $y>>$Logfile
+  Write-host $y
+  $user |%{Grant-csteamsApppermissionPolicy $_.userprincipalname -policyname $_.TeamsAppPermissionPolicy}
+
+
+}
+sleep(300)
+Write-Host " Checking if permisions are working fine !!!!"
+
+$csusers=import-csv $SourceFile
+foreach($user in $csusers)
+{
+	$Myus=$user |%{get-csonlineuser $_.Identity}
+	$obj=new-object psobject
+        $Obj |add-member -NotePropertyname Userprincipalname -NotePropertyValue $LNGmatch
+
+        $Preapp=$user.TeamsAppPermissionPolicy 
+        $Obj |add-member -NotePropertyname PreMigPolicyname -NotePropertyValue $Preapp
+        
+        $PostApp=$Myus.TeamsAppPermissionPolicy
+        $Obj |add-member -NotePropertyname PostMigPolicyname -NotePropertyValue $PostApp 
+
+        $Match=No         
+       if($PreApp -eq $PostApp)
+        {
+          $Match="YES"
+          $y="The App Permission Policy $($user.TeamsAppPermissionPolicy) has been successfully assigned to the user $($user.Userprincipalname)"
+          $y>>$Logfile
+  	  Write-host $y
+        }
+       else
+	{
+          $Match="NO"
+          $y="The App Permission Policy $($user.TeamsAppPermissionPolicy) has been not been successfully assigned to the user $($user.Userprincipalname)"
+          $y>>$Logfile
+  	  Write-host $y
+
+        }
+       $Obj |add-member -NotePropertyname AppPermissionMatch -NotePropertyValue $Match 
+       $obj |export-csv -nti $Report -append
+
+
+}
+Write-host "The Logs file containing details is $($Logfile)"
+#
