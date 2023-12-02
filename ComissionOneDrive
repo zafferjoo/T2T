@@ -1,0 +1,99 @@
+<# 
+.SYNOPSIS
+    The script  can be run in any M365 Tenant to comission the OneDrive Site
+ 
+.DESCRIPTION 
+    The script pulls the list of users from the csv and commissions the OneDrive for each user.
+.NOTES 
+    The script need to run on Windows PowerShell of any  machine with SharePointOnline PowerShell module installed.
+    
+ 
+.COMPONENT 
+     SharePoint Online PowerShell  module needs to be installed.
+ 
+.LINK 
+    The script can be downloaded from Script folder or URL .
+.Parameter ParameterName 
+    There is only one   Parameter.
+    1.Inputfile  : It is a ncessary Parameter  which contains  "userprincipalname" of the as the header. This file has M365 UPN  of users whose
+    OneDrive has to be commissioned.
+
+    
+#>
+
+[CmdletBinding()]
+param(
+[Parameter(Mandatory=$False)][string]$Inputfile,
+[Parameter(Mandatory=$False)][string]$Report
+
+)
+ 
+
+function personal
+{
+param([string]$Identity)
+$url1=($Identity).replace("@","_")
+$url2=$url1.replace(".","_")
+$Site=$OneDriveUrl +$url2
+return $site
+}
+
+
+############### script starts here #############
+$z=get-date
+$file=[string]$z.day+ "_" +$z.month  +"_" +$z.year +"_" +$z.hour+$z.minute+$z.second
+$Logfile=$file +".txt"
+
+
+######## Connecting SPO Service ########
+$Cred=connect-msolservice
+$sku=Get-MsolAccountSku 
+$dom=$sku[0].Accountskuid.split(":")[0]
+
+
+$Url="https://"+ $dom +"-admin.sharepoint.com"
+Connect-SPOService  -Url $Url -ModernAuth $true -AuthenticationUrl https://login.microsoftonline.com/organizations
+
+$users=import-csv $Inputfile
+foreach($user in $users)
+{
+     $Identity=$user.Userprincipalname
+     $y="Requesting the SPO site  for $($Identity)"
+     $y>>$Logfile
+     write-host $y
+     Request-spopersonalsite -useremails $Identity 
+
+}
+
+sleep(120)   #### Waiting for 120 seconds ##########
+$users=import-csv $Inputfile
+
+foreach($user in $users)
+{
+$Identity=$user.Userprincipalname
+$Site=personal -Identity $Identity
+  $mysite=get-sposite $Site
+  if($mysite -eq $null)
+  {
+      Write-host "Site not commissioned"
+      $Obj=new-object psobject
+  $Obj|add-member -NotePropertyname Userprincipalname -NotePropertyValue $Identity
+  $Obj|add-member -NotePropertyname OneDriveURL -NotePropertyValue $Site
+  $Obj|add-member -NotePropertyname SiteCommissioned -NotePropertyValue "NO"
+  $obj |Export-csv $Report -nti -append
+  }
+  else
+ {
+      Write-host "Site  commissioned"
+      $Obj=new-object psobject
+  $Obj|add-member -NotePropertyname Userprincipalname -NotePropertyValue $Identity
+  $Obj|add-member -NotePropertyname OneDriveURL -NotePropertyValue $Site
+  $Obj|add-member -NotePropertyname SiteCommissioned -NotePropertyValue "YES"
+  $obj |Export-csv $Report -nti -append
+  }
+}
+
+
+Write-host "The Logs file containing details is $($Logfile)"
+
+
