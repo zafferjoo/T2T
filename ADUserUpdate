@@ -1,0 +1,151 @@
+<#
+.SYNOPSIS
+    The script scans through Samaccountnames of the users, checks their OU and moves them to Users/Groups/Contact OU of their respective Legal Entity
+
+.DESCRIPTION
+    The script has been created simply to add a user(s) to a ADgroup which inturn is syncing to M365. Based on the membership of the Group, E5 licenses are assigned to it.
+
+.NOTES
+   The Script needs to be saved  on any Windows Server Active Directory server.The Sourcefile contains the Samaccountname of the User.
+   The headers of the file should be  "Samaccountname" contaning the User(s) Samaccountname.
+   "NewMail" containg the updated or new  Mail attribute in Global AD
+   "NewUPN" containg the updated or new Userprincipalname  in Global AD
+   
+   
+
+.COMPONENT
+     Windows PowerShell with AD PowerShell module needs to be installed.
+
+.LINK
+    Useful Link to ressources or others.
+    https://dev.azure.com/USCD-IT/IT_InfaEng/_git/IT_InfaEng?path=/Post_Migration_Script/Post%20Mailbox%20Migration%20Tasks&version=GBMain
+
+.Parameter ParameterName
+    There are 2 parameters
+     1. "InputFile" which is a csv file havin "Samaccountname" as Header
+     2.The "Report" is a Csv file generated which contains User Sync information
+#>
+
+
+
+
+
+[CmdletBinding()]
+param(
+
+[Parameter(Mandatory=$True)][string]$Inputfile,
+[Parameter(Mandatory=$True)][string]$Report
+
+)
+
+function Update_MailAttribute
+{
+    param([String]$Samaccountname,$mail)
+    Write-host "The User Samaccountname is $($Samaccountname) and its Mail Attribute is $($mail)" -ForegroundColor Green
+    Set-aduser $Samaccountname -clear Mail
+    Set-aduser $Samaccountname -add @{Mail=$Mail}
+    $mail=($Samaccountname |%{get-aduser -filter {Samaccountname -eq $_ } -properties *}).Mail
+    return $Mail
+
+}
+
+function Update_UPN
+{
+    param([String]$Samaccountname,$EmailAddress)
+    Set-aduser $Samaccountname -userprincipalname $EmailAddress
+    $Email=($Samaccountname |%{get-aduser -filter{Samaccountname -eq $_ }}).Userprincipalname
+    return $EMail
+
+}
+
+function User_OU
+{
+param([String]$Samaccountname)
+$user=get-aduser $Samaccountname
+$rep="CN=" +$user.name
+$rep=$Rep.Replace("\","")
+$OU1=$user.distinguishedname.replace($rep,"")
+$OU=$OU1.replace(",OU=NotSync","OU=Users")
+return $OU
+}
+
+function group_OU
+{
+param([String]$Samaccountname)
+$user=get-adgroup $Samaccountname
+$rep="CN=" +$user.name
+$rep=$Rep.Replace("\","")
+$OU1=$user.distinguishedname.replace($rep,"")
+$OU=$OU1.replace(",OU=NotSync","OU=Users")
+return $OU
+}
+
+function Contact_OU
+{
+param([String]$Samaccountname)
+$user=get-adobject $Samaccountname
+$rep="CN=" +$user.name
+$rep=$Rep.Replace("\","")
+$OU1=$user.distinguishedname.replace($rep,"")
+$OU=$OU1.replace(",OU=NotSync","OU=Users")
+return $OU
+}
+
+
+
+$users=import-csv $Inputfile
+foreach($user in $users)
+{
+     
+      $type=($user.Samaccountname |%{get-adobject -filter {Samaccountname -eq $_}}).ObjectClass
+      $oldOU=($user.Samaccountname |%{get-adobject -filter {Samaccountname -eq $_}}).distinguishedname
+      write-Host "Scanning for the user $($user.Samaccountname)" -foregroundcolor "Green"
+      switch($type)
+      {
+      "User"
+               {$OU=user_OU -Samaccountname $user.Samaccountname}
+      "Group"
+               {$OU=Group_OU -Samaccountname $user.Samaccountname}
+      "Contact"
+               {$OU=Contact_OU -Samaccountname $user.Samaccountname}
+      }
+      Write-Host "The New Path name is $($OU)"
+      $us= $user.Samaccountname |%{get-aduser -filter {Samaccountname -eq $_} -properties Mail,Emailaddress}
+      $us |Move-Adobject  -TargetPath $OU
+      $newOU=($user.Samaccountname |%{get-aduser -filter {Samaccountname -eq $_}}).DistinguishedName
+     
+      $obj=new-object psobject
+      $obj |add-member -NotePropertyname Samaccountname -NotePropertyValue $user.Samaccountname
+      $obj |add-member -NotePropertyname OldOU -NotePropertyValue $oldOU
+      $obj |add-member -NotePropertyname NewOU -NotePropertyValue $newOU
+
+      if($oldOU -eq $newOU)
+      {
+       $obj |add-member -NotePropertyname OldMail -NotePropertyValue $us.Mail
+       $obj |add-member -NotePropertyname NewMail -NotePropertyValue $us.Mail
+
+       $obj |add-member -NotePropertyname OldUPN -NotePropertyValue $us.Userprincipalname
+       $obj |add-member -NotePropertyname NewUPN -NotePropertyValue $us.Userprincipalname
+
+
+
+      }
+      else
+      {
+       $Mail=Update_MailAttribute -Samaccountname $user.Samaccountname -Mail $user.NewMail
+       $obj |add-member -NotePropertyname OldMail -NotePropertyValue $us.Mail
+       $obj |add-member -NotePropertyname NewMail -NotePropertyValue $Mail
+
+       $Email=Update_UPN -Samaccountname $user.Samaccountname -EmailAddress $user.NewUPN
+       $obj |add-member -NotePropertyname OldUserprincipalname -NotePropertyValue $us.Userprincipalname
+       $obj |add-member -NotePropertyname NewUserprincipalname -NotePropertyValue $Email
+      }
+
+
+
+
+
+      $obj |Export-csv $Report -nti -Append
+
+} 
+
